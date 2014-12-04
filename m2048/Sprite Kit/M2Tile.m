@@ -11,19 +11,23 @@
 #import "M2Tile.h"
 #import "M2Cell.h"
 
+typedef void (^M2Block)();
+
 @implementation M2Tile {
   /** The value of the tile, as some text. */
   SKLabelNode *_value;
   
   /** Pending actions for the tile to execute. */
   NSMutableArray *_pendingActions;
+
+  /** Pending function to call after @p _pendingActions are executed. */
+  M2Block _pendingBlock;
 }
 
 
 # pragma mark - Tile creation
 
-+ (M2Tile *)insertNewTileToCell:(M2Cell *)cell
-{
++ (M2Tile *)insertNewTileToCell:(M2Cell *)cell {
   M2Tile *tile = [[M2Tile alloc] init];
   
   // The initial position of the tile is at the center of its cell. This is so because when
@@ -38,8 +42,7 @@
 }
 
 
-- (instancetype)init
-{
+- (instancetype)init {
   if (self = [super init]) {
     // Layout of the tile.
     CGRect rect = CGRectMake(0, 0, GSTATE.tileSize, GSTATE.tileSize);
@@ -72,8 +75,7 @@
 
 # pragma mark - Public methods
 
-- (void)removeFromParentCell
-{
+- (void)removeFromParentCell {
   // Check if the tile is still registered with its parent cell, and if so, remove it.
   // We don't really care about self.cell, because that is a weak pointer.
   if (self.cell.tile == self) self.cell.tile = nil;
@@ -89,22 +91,24 @@
 }
 
 
-- (void)commitPendingActions
-{
-  [self runAction:[SKAction sequence:_pendingActions]];
-  [_pendingActions removeAllObjects];
+- (void)commitPendingActions {
+  [self runAction:[SKAction sequence:_pendingActions] completion:^{
+    [_pendingActions removeAllObjects];
+    if (_pendingBlock) {
+      _pendingBlock();
+      _pendingBlock = nil;
+    }
+  }];
 }
 
 
-- (BOOL)canMergeWithTile:(M2Tile *)tile
-{
+- (BOOL)canMergeWithTile:(M2Tile *)tile {
   if (!tile) return NO;
   return [GSTATE isLevel:self.level mergeableWithLevel:tile.level];
 }
 
 
-- (NSInteger)mergeToTile:(M2Tile *)tile
-{
+- (NSInteger)mergeToTile:(M2Tile *)tile {
   // Cannot merge with thin air. Also cannot merge with tile that has a pending merge.
   // For the latter, imagine we have 4, 2, 2. If we move to the right, it will first
   // become 4, 4. Now we cannot merge the two 4's.
@@ -126,8 +130,7 @@
 }
 
 
-- (NSInteger)merge3ToTile:(M2Tile *)tile andTile:(M2Tile *)furtherTile
-{
+- (NSInteger)merge3ToTile:(M2Tile *)tile andTile:(M2Tile *)furtherTile {
   if (!tile || [tile hasPendingMerge] || [furtherTile hasPendingMerge]) return 0;
   
   NSUInteger newLevel = MIN([GSTATE mergeLevel:self.level withLevel:tile.level],
@@ -149,8 +152,7 @@
 }
 
 
-- (void)updateLevelTo:(NSInteger)level
-{
+- (void)updateLevelTo:(NSInteger)level {
   self.level = level;
   [_pendingActions addObject:[SKAction runBlock:^{
     [self refreshValue];
@@ -158,8 +160,7 @@
 }
 
 
-- (void)refreshValue
-{
+- (void)refreshValue {
   long value = [GSTATE valueForLevel:self.level];
   _value.text = [NSString stringWithFormat:@"%ld", value];
   _value.fontColor = [GSTATE textColorForLevel:self.level];
@@ -169,10 +170,8 @@
 }
 
 
-- (void)moveToCell:(M2Cell *)cell
-{
-  [_pendingActions addObject:[SKAction moveBy:[GSTATE distanceFromPosition:self.cell.position
-                                                                toPosition:cell.position]
+- (void)moveToCell:(M2Cell *)cell {
+  [_pendingActions addObject:[SKAction moveTo:[GSTATE locationOfPosition:cell.position]
                                      duration:GSTATE.animationDuration]];
   self.cell.tile = nil;
   cell.tile = self;
@@ -181,27 +180,29 @@
 
 - (void)removeAnimated:(BOOL)animated
 {
-  [self removeFromParentCell];
-  // @TODO: fade from center.
   if (animated) [_pendingActions addObject:[SKAction scaleTo:0 duration:GSTATE.animationDuration]];
   [_pendingActions addObject:[SKAction removeFromParent]];
+
+  __weak typeof(self) weakSelf = self;
+  _pendingBlock = ^{
+    [weakSelf removeFromParentCell];
+  };
   [self commitPendingActions];
 }
 
 
-- (void)removeWithDelay
-{
-  [self removeFromParentCell];
+- (void)removeWithDelay {
   SKAction *wait = [SKAction waitForDuration:GSTATE.animationDuration];
   SKAction *remove = [SKAction removeFromParent];
-  [self runAction:[SKAction sequence:@[wait, remove]]];
+  [self runAction:[SKAction sequence:@[wait, remove]] completion:^{
+    [self removeFromParentCell];
+  }];
 }
 
 
 # pragma mark - SKAction helpers
 
-- (SKAction *)pop
-{
+- (SKAction *)pop {
   CGFloat d = 0.15 * GSTATE.tileSize;
   SKAction *wait = [SKAction waitForDuration:GSTATE.animationDuration / 3];
   SKAction *enlarge = [SKAction scaleTo:1.3 duration:GSTATE.animationDuration / 1.5];

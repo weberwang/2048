@@ -17,6 +17,7 @@
 // to make a swipe valid. i.e. diagonal swipes are invalid.
 #define VALID_SWIPE_DIRECTION_THRESHOLD 2.0f
 
+
 @implementation M2Scene {
   /** The game manager that controls all the logic of the game. */
   M2GameManager *_manager;
@@ -28,29 +29,32 @@
    * moves by the same swipe.
    */
   BOOL _hasPendingSwipe;
+
+  /** The current board node. */
+  SKSpriteNode *_board;
 }
 
-- (id)initWithSize:(CGSize)size
-{
-  if (self = [super initWithSize:size]) {
-    _manager = [[M2GameManager alloc] init];
-  }
+
+- (instancetype)initWithSize:(CGSize)size {
+  if (self = [super initWithSize:size]) _manager = [[M2GameManager alloc] init];
   return self;
 }
 
-- (void)loadBoardWithGrid:(M2Grid *)grid
-{
+
+- (void)loadBoardWithGrid:(M2Grid *)grid {
+  // Remove the current board if there is one.
+  if (_board) [_board removeFromParent];
+
   UIImage *image = [M2GridView gridImageWithGrid:grid];
   SKTexture *backgroundTexture = [SKTexture textureWithCGImage:image.CGImage];
-  SKSpriteNode *board = [SKSpriteNode spriteNodeWithTexture:backgroundTexture];
-  [board setScale:0.5];
-  board.position = CGPointMake(CGRectGetMidX(self.frame), CGRectGetMidY(self.frame));
-  [self addChild:board];
+  _board = [SKSpriteNode spriteNodeWithTexture:backgroundTexture];
+  [_board setScale:0.5];
+  _board.position = CGPointMake(CGRectGetMidX(self.frame), CGRectGetMidY(self.frame));
+  [self addChild:_board];
 }
 
 
-- (void)startNewGame
-{
+- (void)startNewGame {
   [_manager startNewSessionWithScene:self];
 }
 
@@ -59,8 +63,7 @@
 
 // @TODO: It makes more sense to move these logic stuff to the view controller.
 
-- (void)didMoveToView:(SKView *)view
-{
+- (void)didMoveToView:(SKView *)view {
   if (view == self.view) {
     // Add swipe recognizer immediately after we move to this scene.
     UIPanGestureRecognizer *recognizer = [[UIPanGestureRecognizer alloc]
@@ -75,8 +78,7 @@
 }
 
 
-- (void)handleSwipe:(UIPanGestureRecognizer *)swipe
-{
+- (void)handleSwipe:(UIPanGestureRecognizer *)swipe {
   if (swipe.state == UIGestureRecognizerStateBegan) {
     _hasPendingSwipe = YES;
   } else if (swipe.state == UIGestureRecognizerStateChanged) {
@@ -85,8 +87,7 @@
 }
 
 
-- (void)commitTranslation:(CGPoint)translation
-{
+- (void)commitTranslation:(CGPoint)translation {
   if (!_hasPendingSwipe) return;
   
   CGFloat absX = fabs(translation.x);
@@ -107,12 +108,5 @@
   _hasPendingSwipe = NO;
 }
 
-
-# pragma mark - Scene update
-
-- (void)update:(CFTimeInterval)currentTime
-{
-  /* Called before each frame is rendered */
-}
 
 @end

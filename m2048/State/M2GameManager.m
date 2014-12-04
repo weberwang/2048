@@ -27,23 +27,26 @@ BOOL iterate(NSInteger value, BOOL countUp, NSInteger upper, NSInteger lower) {
 
 
 @implementation M2GameManager {
-  /* True if game over. */
+  /** True if game over. */
   BOOL _over;
   
-  /* True if won game. */
+  /** True if won game. */
   BOOL _won;
   
-  /* True if user chooses to keep playing after winning. */
+  /** True if user chooses to keep playing after winning. */
   BOOL _keepPlaying;
   
-  /* The current score. */
+  /** The current score. */
   NSInteger _score;
   
-  /* The points earned by the user in the current round. */
+  /** The points earned by the user in the current round. */
   NSInteger _pendingScore;
   
-  /* The grid on which everything happens. */
+  /** The grid on which everything happens. */
   M2Grid *_grid;
+
+  /** The display link to add tiles after removing all existing tiles. */
+  CADisplayLink *_addTileDisplayLink;
 }
 
 
@@ -51,12 +54,8 @@ BOOL iterate(NSInteger value, BOOL countUp, NSInteger upper, NSInteger lower) {
 
 - (void)startNewSessionWithScene:(M2Scene *)scene
 {
-  if (_grid && _grid.dimension == GSTATE.dimension) {
-    // If there is an existing grid and its dimension is still valid,
-    // we keep it, only removing all existing tiles with animation.
-    [_grid removeAllTilesAnimated:YES];
-  } else {
-    if (_grid) [_grid removeAllTilesAnimated:NO];
+  if (_grid) [_grid removeAllTilesAnimated:NO];
+  if (!_grid || _grid.dimension != GSTATE.dimension) {
     _grid = [[M2Grid alloc] initWithDimension:GSTATE.dimension];
     _grid.scene = scene;
   }
@@ -66,9 +65,21 @@ BOOL iterate(NSInteger value, BOOL countUp, NSInteger upper, NSInteger lower) {
   // Set the initial state for the game.
   _score = 0; _over = NO; _won = NO; _keepPlaying = NO;
 
-  // Add two tiles to the grid to start with.
-  [_grid insertTileAtRandomAvailablePositionWithDelay:NO];
-  [_grid insertTileAtRandomAvailablePositionWithDelay:NO];
+  // Existing tile removal is async and happens in the next screen refresh, so we'd wait a bit.
+  _addTileDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(addTwoRandomTiles)];
+  [_addTileDisplayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+}
+
+
+- (void)addTwoRandomTiles
+{
+  // If the scene only has one child (the board), we can proceed with adding new tiles
+  // since all old ones are removed. After adding new tiles, remove the displaylink.
+  if (_grid.scene.children.count <= 1) {
+    [_grid insertTileAtRandomAvailablePositionWithDelay:NO];
+    [_grid insertTileAtRandomAvailablePositionWithDelay:NO];
+    [_addTileDisplayLink invalidate];
+  }
 }
 
 
@@ -185,7 +196,7 @@ BOOL iterate(NSInteger value, BOOL countUp, NSInteger upper, NSInteger lower) {
     // We set `keepPlaying` to YES. If the user decides not to keep playing,
     // we will be starting a new game, so the current state is no longer relevant.
     _keepPlaying = YES;
-    [_grid.scene.delegate endGame:YES];
+    [_grid.scene.controller endGame:YES];
   }
     
   // Add one more tile to the grid.
@@ -194,7 +205,7 @@ BOOL iterate(NSInteger value, BOOL countUp, NSInteger upper, NSInteger lower) {
     [_grid insertTileAtRandomAvailablePositionWithDelay:YES];
     
   if (![self movesAvailable]) {
-    [_grid.scene.delegate endGame:NO];
+    [_grid.scene.controller endGame:NO];
   }
 }
 
@@ -205,7 +216,7 @@ BOOL iterate(NSInteger value, BOOL countUp, NSInteger upper, NSInteger lower) {
 {
   _score += _pendingScore;
   _pendingScore = 0;
-  [_grid.scene.delegate updateScore:_score];
+  [_grid.scene.controller updateScore:_score];
 }
 
 
